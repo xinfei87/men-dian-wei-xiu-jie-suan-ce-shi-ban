@@ -80,6 +80,14 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
 .hidden{display:none!important}
 .photo-preview{max-width:220px;border-radius:10px;border:1px solid var(--line);margin-top:8px;display:none}
 .notice{border-left:4px solid var(--warn);background:var(--warn-bg);padding:12px 14px;border-radius:0 10px 10px 0;font-size:14px}
+.st-rejected{background:#fee2e2;color:#991b1b}
+.st-cancelled{background:#e5e7eb;color:#4b5563}
+.proj-line{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--bg)}
+.proj-line .pl-top{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.proj-line .pl-top .field{flex:1;min-width:140px}
+.bulk-warn{border:1px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:10px 12px;margin-top:8px;font-size:13px}
+.flag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;margin-left:6px}
+.flag-red{background:#fee2e2;color:#991b1b;border-color:#fecaca}
 </style>
 </head>
 <body>
@@ -98,13 +106,13 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
       <span class="pill">维修人员</span>
       <strong style="margin-top:10px">维修人员</strong>
       <div class="cred">账号 111 &nbsp; 密码 111</div>
-      <span style="color:var(--muted);font-size:14px">点这里直接进入 → 只能看自己交过的单，填单自动带出本人姓名</span>
+      <span style="color:var(--muted);font-size:14px">点这里直接进入 → 填单、看自己交过的单；交错了可撤销重提</span>
     </button>
     <button class="login-card" onclick="quickLogin('222')">
       <span class="pill">工程管理员</span>
       <strong style="margin-top:10px">工程管理员</strong>
       <div class="cred">账号 222 &nbsp; 密码 222</div>
-      <span style="color:var(--muted);font-size:14px">点这里直接进入 → 看全部单据、改单、确认、看汇总表</span>
+      <span style="color:var(--muted);font-size:14px">点这里直接进入 → 看全部单据、改单、确认、回退、汇总导出；工程管理员不填单</span>
     </button>
   </div>
 
@@ -156,15 +164,17 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
         <span class="pill">维修人员：<strong id="f_workerText">—</strong></span>
         <span class="pill" id="f_regionFeeText">选门店后自动带出区和上门费</span>
+        <span class="pill" id="f_versionText">输店号后锁定价格版本</span>
       </div>
       <div class="notice hidden" id="doorWarn" style="margin-top:12px">⚠️ 同一天同一家店已经收过一次上门费了。按规定同一天同一家店只收一次，这单的上门费已自动设为 0，请核对。</div>
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">选维修项目 <span class="req" style="color:var(--danger);font-size:13px">*必填</span></h3>
-      <div class="field"><label>搜项目</label><input id="projSearch" placeholder="搜：水龙头 / 灯 / 疏通 / 插座…" oninput="renderProjectOptions()"><div class="hint" id="projCount"></div></div>
-      <div class="field" style="margin-top:10px"><label>维修项目（单价照 2025 价格表自动带出）</label><select id="f_project" onchange="onProjectChange()"></select><div class="hint" id="projHint"></div></div>
-      <div class="field" style="margin-top:10px;max-width:180px"><label>数量</label><input type="number" id="f_qty" value="1" min="1" step="1" oninput="recalc()"></div>
+      <h3 style="margin-top:0">选维修项目 <span class="req" style="color:var(--danger);font-size:13px">*必填，可加多个</span></h3>
+      <p class="hint" style="margin:-8px 0 12px">一个单子可以修好几样：每个项目一行，点下面“＋ 再加一个维修项目”。搜不到合适的项目就点那行的“手动填”。</p>
+      <div id="projLines"></div>
+      <button class="btn-sm" type="button" onclick="addProjLine()">＋ 再加一个维修项目</button>
+      <div class="hint" id="projCount" style="margin-top:8px"></div>
 
       <details class="fold">
         <summary>＋ 非标 / 材料额外行（没有可不加）</summary>
@@ -182,6 +192,7 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
         <div class="row"><span>上门费</span><strong id="t_door">¥0</strong></div>
         <div class="row"><span>维修费</span><strong id="t_repair">¥0</strong></div>
         <div class="row"><span>材料费</span><strong id="t_material">¥0</strong></div>
+        <div class="row"><span>非标（手填/额外行）</span><strong id="t_custom">¥0</strong></div>
         <div class="row grand"><span>合计</span><span id="t_total">¥0</span></div>
         <div class="hint" id="t_upper" style="margin-top:6px"></div>
       </div>
@@ -197,13 +208,21 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
       <h3 style="margin-top:0">筛选</h3>
       <div class="filters">
         <div class="field"><label>月份</label><input type="month" id="q_month" onchange="renderOrders()"></div>
+        <div class="field"><label>开始日期</label><input type="date" id="q_from" onchange="renderOrders()"></div>
+        <div class="field"><label>结束日期</label><input type="date" id="q_to" onchange="renderOrders()"></div>
         <div class="field"><label>区域</label><select id="q_region" onchange="renderOrders()"><option value="">全部区域</option></select></div>
-        <div class="field"><label>状态</label><select id="q_status" onchange="renderOrders()"><option value="">全部状态</option><option>待工程管理员确认</option><option>已确认</option><option>已结算</option></select></div>
+        <div class="field"><label>状态</label><select id="q_status" onchange="renderOrders()"><option value="">全部状态</option><option>待工程管理员确认</option><option>已确认</option><option>已结算</option><option>已回退</option><option>已撤销</option></select></div>
         <div class="field"><label>门店编号</label><input id="q_store" placeholder="10001" oninput="renderOrders()"></div>
         <div class="field"><label>项目关键词</label><input id="q_proj" placeholder="水龙头" oninput="renderOrders()"></div>
         <div class="field"><label>维修人员</label><input id="q_worker" placeholder="姓名" oninput="renderOrders()"></div>
+        <div class="field"><label>金额 ≥（元）</label><input type="number" id="q_minAmt" placeholder="0" min="0" oninput="renderOrders()"></div>
+        <div class="field"><label>金额 ≤（元）</label><input type="number" id="q_maxAmt" placeholder="不限" min="0" oninput="renderOrders()"></div>
       </div>
       <p class="hint" id="orderScopeHint"></p>
+      <div id="adminExportRow" style="margin-top:10px;display:none">
+        <button class="primary" onclick="exportExcel()">导出当前筛选结果 Excel</button>
+        <span class="hint">导出的就是上面筛选后的单据，和“汇总导出”页签是同一份数据。</span>
+      </div>
     </div>
     <div id="ordersList"></div>
   </section>
@@ -256,6 +275,14 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
       <h4>上门费档位（台州）</h4>
       <div id="tierList"></div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="newTierRegion" placeholder="新区名，如 台州湾" style="flex:1;min-width:140px"><input id="newTierFee" type="number" placeholder="费用" style="width:120px"><button onclick="addTier()">新增档位</button></div>
+      <h4 style="margin-top:22px">价格版本（多地区：项目一样，单价不一样）</h4>
+      <p class="hint">每个门店输店号时按所在地区锁定一个价格版本。先有“台州”版本；新地区来了点“新增版本”，从台州复制一份再逐项改单价，不用重建 242 个项目。留空 = 和台州价一样。</p>
+      <div id="versionList"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="newVerName" placeholder="新版本名，如 杭州" style="flex:1;min-width:140px"><button onclick="addVersion()">新增版本（从台州复制）</button></div>
+      <div id="versionEditor" style="margin-top:12px"></div>
+      <h4 style="margin-top:22px">大数量提醒线</h4>
+      <p class="hint">单项数量达到这个数时，填单会提醒“大数量”，维修人员可按合同价结算，也可手动改单价并写原因，管理员在单据上能看到标记。</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>单项数量 ≥</span><input id="bulkQtyInput" type="number" value="5" min="2" style="width:100px" onchange="setBulkQty()"><span>时标记为大数量</span></div>
       <h4 style="margin-top:22px">维修项目（可增 / 改 / 删，维修人员可手动增加新项目）</h4>
       <div class="grid2">
         <div class="field"><label>项目名称</label><input id="p_name" placeholder="如 更换水龙头"></div>
@@ -277,16 +304,17 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
   <section id="tab-stores" class="hidden">
     <div class="card">
       <h3 style="margin-top:0">门店库 · 输店号带店名</h3>
-      <p class="hint">测试店号已按要求用简单数字。每月拿到最新清单后，可在下方粘贴同步：每行一行，格式 <code>店号,店名,区域</code>，选增量同步新店自动加入。</p>
+      <p class="hint">测试店号已按要求用简单数字。每月拿到最新清单后，可在下方粘贴同步：每行一行，格式 <code>店号,店名,区域,价格版本</code>，价格版本可空（空了按区域自动找版本，找不到用台州）。</p>
       <div id="storeList"></div>
       <div class="grid2" style="margin-top:12px">
         <div class="field"><label>新店号</label><input id="s_code" placeholder="10006"></div>
         <div class="field"><label>店名</label><input id="s_name" placeholder="测试店-…"></div>
         <div class="field"><label>区域</label><input id="s_region" placeholder="椒江"></div>
+        <div class="field"><label>价格版本</label><select id="s_version"></select></div>
       </div>
       <button class="primary" style="margin-top:10px" onclick="addStore()">新增门店</button>
       <h4 style="margin-top:20px">批量同步清单（粘贴）</h4>
-      <textarea id="bulkStores" placeholder="10006,测试店-新店,椒江&#10;10007,测试店-二店,路桥"></textarea>
+      <textarea id="bulkStores" placeholder="10006,测试店-新店,椒江,台州&#10;10007,测试店-二店,路桥"></textarea>
       <button style="margin-top:8px" onclick="bulkSync()">增量同步（只加新店 / 更新同号）</button>
       <div class="hint" id="bulkMsg"></div>
     </div>
@@ -299,7 +327,10 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
       <p>费用分三行写，一行一项，不要合成一个总数：</p>
       <ul>
         <li><strong>上门费：</strong>写“上门费（××区）”，区名要写。椒江 / 路桥 / 黄岩 30 元，温岭 / 临海 60 元，玉环 / 仙居 / 天台 / 三门 90 元。同一天同一家店只收一次。</li>
-        <li><strong>维修费：</strong>名称照抄 2025 价格表，单价按表上固定价，不要自己报价。表上没有的先问工程组，可在价格维护里手动增加。</li>
+        <li><strong>维修费：</strong>名称照抄 2025 价格表，单价按表上固定价，不要自己报价。一个单子可以修好几样，点“＋ 再加一个维修项目”。表上没有的项目点那行的“手动填”，自己填名称和单价（会标成非标，管理员能看到）。</li>
+        <li><strong>数量：</strong>一般修 1 个。一次修 5 个及以上会标成“大数量”：可按合同价结算，也可手动改单价并写原因，管理员确认时能看到标记。</li>
+        <li><strong>价格版本：</strong>输店号后按门店所在地区自动锁定价格版本（项目一样、单价按地区走），不用自己选。</li>
+        <li><strong>撤销与回退：</strong>交完发现错了，在“单据”里点“撤销”收回，改好重新提交；管理员觉得不对会“回退”并写原因，按原因改好重新提交。</li>
         <li><strong>材料费：</strong>写清名称、规格、用量（如“PVC 下水管 DN50，2 米 × 25 元”）。甲供材料不报材料费。</li>
         <li>空行划斜线不要留空；时间填到日；本人签字，<strong>工程管理员确认</strong>后才结算（已按要求改掉“店长确认”）。</li>
       </ul>
@@ -317,7 +348,8 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
 
 <!-- EDIT MODAL -->
 <div class="modal" id="editModal"><div class="modal-box">
-  <h3 style="margin-top:0">工程管理员 · 修改单据（按行改）</h3>
+  <h3 style="margin-top:0" id="editTitle">工程管理员 · 修改单据（按行改）</h3>
+  <div class="notice hidden" id="editRejectNote" style="margin-bottom:12px"></div>
   <input type="hidden" id="e_id">
   <div class="grid2">
     <div class="field"><label>门店编号</label><input id="e_storeCode"></div>
@@ -325,7 +357,7 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
     <div class="field"><label>区域</label><input id="e_region"></div>
     <div class="field"><label>日期</label><input type="date" id="e_date"></div>
     <div class="field"><label>维修人员</label><input id="e_worker"></div>
-    <div class="field"><label>状态</label><select id="e_status"><option>待工程管理员确认</option><option>已确认</option><option>已结算</option></select></div>
+    <div class="field" id="e_statusField"><label>状态</label><select id="e_status"><option>待工程管理员确认</option><option>已确认</option><option>已结算</option><option>已回退</option><option>已撤销</option></select></div>
   </div>
   <h4 style="margin:18px 0 8px">费用明细（一行一项，数量、单价直接改，小计自动算）</h4>
   <div id="e_lineRows"></div>
@@ -334,7 +366,16 @@ details.fold summary{cursor:pointer;font-weight:700;min-height:32px;display:flex
   </div>
   <div class="total-box" style="margin-top:12px"><div class="row grand" style="border:none;margin:0;padding:0"><span>合计（自动重算）</span><span id="e_total">¥0</span></div></div>
   <div class="field" style="margin-top:10px"><label>备注</label><textarea id="e_remark"></textarea></div>
-  <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" onclick="saveEdit()">保存修改</button><button onclick="closeEdit()">取消</button></div>
+  <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" id="editSaveBtn" onclick="saveEdit()">保存修改</button><button onclick="closeEdit()">取消</button></div>
+</div></div>
+
+<!-- REJECT MODAL -->
+<div class="modal" id="rejectModal"><div class="modal-box" style="max-width:520px">
+  <h3 style="margin-top:0">回退单据</h3>
+  <p class="hint">写清哪里不对，维修人员按原因改好重新提交。</p>
+  <input type="hidden" id="r_id">
+  <div class="field"><label>回退原因 <span class="req" style="color:var(--danger)">*</span></label><textarea id="r_reason" placeholder="例如：水龙头数量不对，请核对后重新提交"></textarea></div>
+  <div style="display:flex;gap:8px;margin-top:14px"><button class="primary" onclick="confirmReject()">确认回退</button><button onclick="closeReject()">取消</button></div>
 </div></div>
 
 <script>
@@ -596,12 +637,35 @@ var prices=[
   {id:242,name:"电话通知加急维修",cat:"电路·其他",unit:"项",spec:"",repair:0,matName:'',matFee:0,jia:false,kw:""}
 ];
 var orders=[
-  {id:'TEST-20261031-001',storeCode:'10001',storeName:'测试店-椒江解放南路店',region:'椒江',date:'2026-10-31',worker:'测试维修员 · 李师傅',workerAccount:'111',status:'待工程管理员确认',photo:'',remark:'样板单',lines:[
+  {id:'TEST-20261031-001',storeCode:'10001',storeName:'测试店-椒江解放南路店',region:'椒江',priceVersion:'台州',date:'2026-10-31',worker:'测试维修员 · 李师傅',workerAccount:'111',status:'待工程管理员确认',photo:'',remark:'样板单',lines:[
     {projectName:'上门费（椒江）',unit:'次',qty:1,price:30,amount:30,remark:'',kind:'door'},
     {projectName:'更换水龙头',unit:'次',qty:1,price:80,amount:80,remark:'',kind:'repair'},
     {projectName:'水龙头材料',unit:'个',qty:1,price:45,amount:45,remark:'',kind:'material'}
   ],total:155}
 ];
+/* 价格版本：项目一样，单价按地区走。overrides 只存和台州不一样的单价，空 = 和台州价一样 */
+var priceVersions=[
+  {id:'taizhou',name:'台州',regions:['椒江','路桥','黄岩','温岭','临海','玉环','仙居','天台','三门'],overrides:{}}
+];
+var settings={bulkQty:5};
+var currentVersion=null; /* 当前这单锁定的价格版本对象 */
+var projLineCount=0;
+function versionForStore(st){
+  if(!st) return priceVersions[0];
+  if(st.version){var v=priceVersions.find(function(x){return x.id===st.version}); if(v) return v;}
+  var byRegion=priceVersions.find(function(x){return x.regions.indexOf(st.region)>=0});
+  return byRegion||priceVersions[0];
+}
+function priceFor(p,ver){
+  ver=ver||currentVersion||priceVersions[0];
+  var base={repair:p.repair,matFee:p.matFee};
+  if(ver&&ver.overrides&&ver.overrides[p.id]){
+    var o=ver.overrides[p.id];
+    if(o.repair!=null&&o.repair!=='') base.repair=Number(o.repair);
+    if(o.matFee!=null&&o.matFee!=='') base.matFee=Number(o.matFee);
+  }
+  return base;
+}
 var nextPriceId=243, extraCount=0, currentStore=null, doorChargedZero=false;
 
 function $(id){return document.getElementById(id)}
@@ -629,14 +693,17 @@ function manualLogin(){
 function doLogin(u){
   currentUser=u;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
-  $('whoami').textContent='当前：'+u.name+'（账号 '+u.account+'）· '+(u.role==='admin'?'可看全部、改单、确认、汇总':'只能看自己提交的单');
+  $('whoami').textContent='当前：'+u.name+'（账号 '+u.account+'）· '+(u.role==='admin'?'可看全部、改单、确认、回退、汇总':'只能看自己提交的单');
   $('f_workerText').textContent=u.name;
   var isAdmin=u.role==='admin';
+  document.querySelector('#tabs button[data-tab="fill"]').style.display=isAdmin?'none':'';
   $('tabSummaryBtn').style.display=isAdmin?'':'none';
   $('tabPriceBtn').style.display=isAdmin?'':'none';
   $('tabStoreBtn').style.display=isAdmin?'':'none';
-  $('orderScopeHint').textContent=isAdmin?'工程管理员：显示全部人员的单据，可修改、确认、结算、删除。':'维修人员：只显示你自己提交的单据，用于核对状态。';
-  initForm(); renderOrders(); renderSummary(); renderPrices(); renderTiers(); renderStores(); fillRegionFilter();
+  $('adminExportRow').style.display=isAdmin?'':'none';
+  $('orderScopeHint').textContent=isAdmin?'工程管理员：显示全部人员的单据，可修改、确认、回退、结算、删除；按日期、地区、人员、金额筛选后可导出。':'维修人员：只显示你自己提交的单据；交错了可以撤销，被回退的按原因改好重新提交。';
+  initForm(); renderOrders(); renderSummary(); renderPrices(); renderTiers(); renderStores(); fillRegionFilter(); renderVersions(); fillStoreVersionSelect();
+  showTab(isAdmin?'orders':'fill');
 }
 function logout(){currentUser=null;$('appView').classList.add('hidden');$('loginView').classList.remove('hidden')}
 function showTab(name){
@@ -646,7 +713,21 @@ function showTab(name){
 }
 function initForm(){
   $('f_date').value=new Date().toISOString().slice(0,10);
-  renderProjectOptions();
+  resetFillForm();
+}
+function resetFillForm(){
+  $('f_storeCode').value=''; currentStore=null; currentVersion=priceVersions[0];
+  $('storeResult').textContent='输编号点“查店名”，自动带出标准店名和所在区，不用手打店名。';
+  $('f_regionFeeText').textContent='选门店后自动带出区和上门费';
+  $('f_versionText').textContent='输店号后锁定价格版本';
+  $('doorWarn').classList.add('hidden'); doorChargedZero=false;
+  $('projLines').innerHTML=''; projLineCount=0; addProjLine();
+  $('extraLines').innerHTML='';
+  $('f_remark').value='';
+  var ph=$('photoPreview'); if(ph){ph.src='';ph.style.display='none';}
+  var fp=$('f_photo'); if(fp) fp.value='';
+  $('submitOk').textContent='';
+  recalc();
 }
 function fillRegionFilter(){
   var sel=$('q_region'); var cur=sel.value;
@@ -655,11 +736,14 @@ function fillRegionFilter(){
 }
 function lookupStore(){
   var code=$('f_storeCode').value.trim();
-  if(!code){$('storeError').style.display='block';currentStore=null;recalc();return}
+  if(!code){$('storeError').style.display='block';currentStore=null;currentVersion=priceVersions[0];$('f_versionText').textContent='输店号后锁定价格版本';recalc();return}
   var st=stores.find(function(s){return s.code===code});
-  if(!st){$('storeError').textContent='没查到这个店号。测试店号是 10001–10005，或请工程管理员在门店维护里新增。';$('storeError').style.display='block';currentStore=null;$('storeResult').textContent='';$('f_regionFeeText').textContent='选门店后自动带出区和上门费';recalc();return}
+  if(!st){$('storeError').textContent='没查到这个店号。测试店号是 10001–10005，或请工程管理员在门店维护里新增。';$('storeError').style.display='block';currentStore=null;currentVersion=priceVersions[0];$('storeResult').textContent='';$('f_regionFeeText').textContent='选门店后自动带出区和上门费';$('f_versionText').textContent='输店号后锁定价格版本';recalc();return}
   $('storeError').style.display='none'; currentStore=st;
+  currentVersion=versionForStore(st);
   $('storeResult').innerHTML='✅ 已带出：<strong>'+esc(st.name)+'</strong> · '+esc(st.region)+'区';
+  $('f_versionText').textContent='价格版本：'+currentVersion.name+'（按门店地区锁定）';
+  refreshAllProjLines();
   checkDoorDup(); recalc();
 }
 function checkDoorDup(){
@@ -670,35 +754,131 @@ function checkDoorDup(){
   if(dup){doorChargedZero=true;$('doorWarn').classList.remove('hidden')}
   $('f_regionFeeText').textContent=currentStore.region+' · 上门费 '+(doorChargedZero?0:feeForRegion(currentStore.region))+' 元'+(doorChargedZero?'（今日已收过）':'');
 }
-function renderProjectOptions(){
-  var q=($('projSearch').value||'').trim().toLowerCase();
-  var list=prices.filter(function(p){
-    if(!q) return true;
+function addProjLine(){
+  projLineCount++;
+  var id='pl-'+projLineCount;
+  var div=document.createElement('div'); div.className='proj-line'; div.id=id;
+  div.innerHTML=
+    '<div class="pl-top">'
+    +'<div class="field"><label>搜项目</label><input class="pl-search" placeholder="搜：水龙头 / 灯 / 疏通…" oninput="filterProjLine(\''+id+'\')"></div>'
+    +'<div class="field"><label>维修项目</label><select class="pl-select" onchange="onProjLineChange(\''+id+'\')"></select></div>'
+    +'<div class="field" style="max-width:110px"><label>数量</label><input class="pl-qty" type="number" value="1" min="1" step="1" oninput="onProjLineChange(\''+id+'\')"></div>'
+    +'<button class="btn-sm" type="button" onclick="removeProjLine(\''+id+'\')">删这行</button>'
+    +'</div>'
+    +'<div class="hint pl-hint"></div>'
+    +'<div class="pl-manual hidden" style="margin-top:10px">'
+    +'<div class="grid2">'
+    +'<div class="field"><label>项目名称 *</label><input class="pl-m-name" placeholder="自己填项目名称" oninput="recalc()"></div>'
+    +'<div class="field"><label>单位</label><input class="pl-m-unit" value="次" oninput="recalc()"></div>'
+    +'<div class="field"><label>维修费（元）*</label><input class="pl-m-repair" type="number" value="0" min="0" oninput="recalc()"></div>'
+    +'<div class="field"><label>材料名称（没有可空）</label><input class="pl-m-matname" placeholder="材料名" oninput="recalc()"></div>'
+    +'<div class="field"><label>材料费（元，没有填0）</label><input class="pl-m-matfee" type="number" value="0" min="0" oninput="recalc()"></div>'
+    +'<div class="field"><label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" class="pl-m-jia" style="width:20px;min-height:20px" onchange="recalc()"> 甲供材料（不收材料费）</label></div>'
+    +'</div></div>'
+    +'<div class="bulk-warn hidden pl-bulk"></div>';
+  $('projLines').appendChild(div);
+  filterProjLine(id);
+  updateProjCount();
+  return id;
+}
+function removeProjLine(id){
+  var rows=document.querySelectorAll('#projLines .proj-line');
+  if(rows.length<=1){showToast('至少要留一个维修项目。');return}
+  var el=$(id); if(el) el.remove();
+  updateProjCount(); recalc();
+}
+function lineProjects(q){
+  q=(q||'').trim().toLowerCase();
+  if(!q) return prices.slice();
+  return prices.filter(function(p){
     var hay=[p.name||'',p.cat||'',p.spec||'',p.matName||'',p.unit||'',p.kw||''].join(' ').toLowerCase();
     return hay.indexOf(q)>=0;
   });
-  var sel=$('f_project');
-  var prev=sel.value;
-  var hasPrev=list.some(function(p){return String(p.id)===String(prev)});
-  if(!list.length){
-    sel.innerHTML='<option value="">没有匹配的项目，去价格维护新增</option>';
-    sel.value='';
-  }else{
-    sel.innerHTML=list.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+' — 维修费 '+p.repair+' 元'+(p.jia?' · 甲供不收材料费':(p.matFee?' · 材料 '+p.matFee+' 元':''))+'</option>'}).join('');
-    // Bug fix: only restore the previous selection when it is still in the
-    // filtered list. Restoring an id that was filtered out set selectedIndex
-    // to -1 and left the dropdown blank (e.g. search "灯" after "水龙头").
-    sel.value=hasPrev?prev:String(list[0].id);
-  }
-  var cnt=$('projCount');
-  if(cnt){ cnt.textContent=q?('找到 '+list.length+' 个带“'+$('projSearch').value.trim()+'”的项目，点下面下拉框就能选'):( '共 '+list.length+' 个项目，可直接在下面下拉框选，或输入关键字搜索'); }
-  onProjectChange(false);
 }
-function getProject(){return prices.find(function(p){return p.id==$('f_project').value})}
-function onProjectChange(recalcOnly){
-  var p=getProject();
-  $('projHint').textContent=p?('大类：'+p.cat+' · 单位：'+p.unit+(p.spec?' · 规格：'+p.spec:'')+(p.jia?' · 甲供材料，不报材料费':'')):'';
+function filterProjLine(id){
+  var line=$(id); if(!line) return;
+  var q=line.querySelector('.pl-search').value;
+  var list=lineProjects(q);
+  var sel=line.querySelector('.pl-select');
+  var prev=sel.value;
+  var hint=line.querySelector('.pl-hint');
+  if(!list.length){
+    sel.innerHTML='<option value="">没有匹配的项目</option>'; sel.value='';
+    hint.innerHTML='没找到“'+esc(q.trim())+'”？<a href="javascript:void(0)" onclick="toggleManual(\''+id+'\',true)">点这里手动填写</a>，自己填名称和单价。';
+  }else{
+    sel.innerHTML=list.map(function(p){var pr=priceFor(p);return '<option value="'+p.id+'">'+esc(p.name)+' — 维修费 '+pr.repair+' 元'+(p.jia?' · 甲供不收材料费':(pr.matFee?' · 材料 '+pr.matFee+' 元':''))+'</option>'}).join('');
+    var hasPrev=list.some(function(p){return String(p.id)===String(prev)});
+    sel.value=hasPrev?prev:String(list[0].id);
+    hint.innerHTML='搜不到合适的？<a href="javascript:void(0)" onclick="toggleManual(\''+id+'\',true)">手动填写</a>';
+  }
+  onProjLineChange(id);
+}
+function toggleManual(id,on){
+  var line=$(id); if(!line) return;
+  var manual=line.querySelector('.pl-manual');
+  var sel=line.querySelector('.pl-select');
+  var search=line.querySelector('.pl-search');
+  var hint=line.querySelector('.pl-hint');
+  if(on){
+    manual.classList.remove('hidden');
+    sel.disabled=true; search.disabled=true;
+    hint.innerHTML='手动填写中（会标成非标，管理员能看到）。<a href="javascript:void(0)" onclick="toggleManual(\''+id+'\',false)">改回选项目</a>';
+    var q=search.value.trim();
+    var nm=line.querySelector('.pl-m-name');
+    if(q&&!nm.value) nm.value=q;
+  }else{
+    manual.classList.add('hidden');
+    sel.disabled=false; search.disabled=false;
+    filterProjLine(id);
+  }
   recalc();
+}
+function onProjLineChange(id){
+  var line=$(id); if(!line) return;
+  var sel=line.querySelector('.pl-select');
+  var manual=line.querySelector('.pl-manual');
+  var isManual=!manual.classList.contains('hidden');
+  var qty=Math.max(1,Number(line.querySelector('.pl-qty').value)||1);
+  var hint=line.querySelector('.pl-hint');
+  if(!isManual){
+    var p=prices.find(function(x){return x.id==sel.value});
+    if(p){var pr=priceFor(p);hint.innerHTML='大类：'+esc(p.cat)+' · 单位：'+esc(p.unit)+(p.spec?' · 规格：'+esc(p.spec):'')+(p.jia?' · 甲供材料，不报材料费':'')+' · 单价按'+esc((currentVersion||priceVersions[0]).name)+'版本：维修费 '+pr.repair+' 元'+(pr.matFee?'、材料 '+pr.matFee+' 元':'')+'。搜不到？<a href="javascript:void(0)" onclick="toggleManual(\''+id+'\',true)">手动填写</a>';}
+  }
+  var bulk=line.querySelector('.pl-bulk');
+  var savedMode=null, savedUnit='', savedReason='';
+  if(bulk&&!bulk.classList.contains('hidden')){
+    var rr=line.querySelector('input[name="bulk-'+id+'"]:checked'); savedMode=rr?rr.value:null;
+    var bu0=line.querySelector('.pl-bulk-unit'); savedUnit=bu0?bu0.value:'';
+    var br0=line.querySelector('.pl-bulk-reason'); savedReason=br0?br0.value:'';
+  }
+  if(qty>=settings.bulkQty){
+    bulk.classList.remove('hidden');
+    bulk.innerHTML='⚠️ 大数量（'+qty+' 个）：合同没定多件怎么算。你可以 <label style="display:inline-flex;gap:6px;align-items:center"><input type="radio" name="bulk-'+id+'" value="contract"'+(savedMode==='manual'?'':' checked')+' onchange="toggleBulkPrice(\''+id+'\')"> 按合同单价结算</label> <label style="display:inline-flex;gap:6px;align-items:center;margin-left:10px"><input type="radio" name="bulk-'+id+'" value="manual"'+(savedMode==='manual'?' checked':'')+' onchange="toggleBulkPrice(\''+id+'\')"> 手动改单价</label>'
+    +'<span class="pl-bulk-price hidden" style="display:block;margin-top:8px">改后单价（元/件） <input class="pl-bulk-unit" type="number" value="0" min="0" style="width:120px;display:inline-block" oninput="recalc()">　改价原因 * <input class="pl-bulk-reason" placeholder="例如：一次修6个，按批量价算" style="width:220px;display:inline-block" oninput="recalc()"></span>';
+    var box=line.querySelector('.pl-bulk-price');
+    if(box) box.classList.toggle('hidden',savedMode!=='manual');
+    var bu1=line.querySelector('.pl-bulk-unit'); if(bu1) bu1.value=savedUnit;
+    var br1=line.querySelector('.pl-bulk-reason'); if(br1) br1.value=savedReason;
+  }else{
+    bulk.classList.add('hidden'); bulk.innerHTML='';
+  }
+  recalc();
+}
+function toggleBulkPrice(id){
+  var line=$(id); if(!line) return;
+  var r=line.querySelector('input[name="bulk-'+id+'"]:checked');
+  var box=line.querySelector('.pl-bulk-price');
+  if(box) box.classList.toggle('hidden',!r||r.value!=='manual');
+  recalc();
+}
+function refreshAllProjLines(){
+  document.querySelectorAll('#projLines .proj-line').forEach(function(line){filterProjLine(line.id)});
+  updateProjCount();
+}
+function updateProjCount(){
+  var n=document.querySelectorAll('#projLines .proj-line').length;
+  var c=$('projCount');
+  if(c) c.textContent='已加 '+n+' 个维修项目（共 '+prices.length+' 个项目可选）';
 }
 function addExtraLine(){
   extraCount++;
@@ -710,21 +890,69 @@ function onPhoto(e){
   var f=e.target.files[0]; if(!f) return;
   var r=new FileReader(); r.onload=function(ev){var img=$('photoPreview');img.src=ev.target.result;img.style.display='block'}; r.readAsDataURL(f);
 }
+function lineAmounts(line){
+  var qty=Math.max(1,Number(line.querySelector('.pl-qty').value)||1);
+  var manual=line.querySelector('.pl-manual');
+  var isManual=!manual.classList.contains('hidden');
+  var out={repair:0,material:0,custom:0,lines:[],valid:false};
+  var bulkMode=null, bulkUnit=0, bulkReason='';
+  var bulkBox=line.querySelector('.pl-bulk');
+  if(bulkBox&&!bulkBox.classList.contains('hidden')){
+    var r=line.querySelector('input[name="bulk-'+line.id+'"]:checked');
+    bulkMode=r?r.value:'contract';
+    var bu=line.querySelector('.pl-bulk-unit');
+    var br=line.querySelector('.pl-bulk-reason');
+    bulkUnit=bu?Number(bu.value)||0:0;
+    bulkReason=br?br.value.trim():'';
+  }
+  var isBulk=qty>=settings.bulkQty;
+  var bulkTag=isBulk?('大数量'+qty+'个'):'';
+  if(isManual){
+    var nm=line.querySelector('.pl-m-name').value.trim();
+    if(!nm) return out;
+    var unit=line.querySelector('.pl-m-unit').value.trim()||'次';
+    var rp=Number(line.querySelector('.pl-m-repair').value)||0;
+    var mn=line.querySelector('.pl-m-matname').value.trim();
+    var mf=Number(line.querySelector('.pl-m-matfee').value)||0;
+    var jia=line.querySelector('.pl-m-jia').checked;
+    var effRp=(bulkMode==='manual'&&bulkUnit>0)?bulkUnit:rp;
+    var rem='手填项目'+(isBulk?' · '+bulkTag:'')+(bulkMode==='manual'?(' · 手动改价：'+bulkReason):'');
+    out.lines.push({projectName:nm,unit:unit,qty:qty,price:effRp,amount:effRp*qty,remark:rem,kind:'custom',manual:true,bulk:isBulk});
+    out.custom+=effRp*qty;
+    if(!jia&&mf){out.lines.push({projectName:(mn||nm)+'材料',unit:'个',qty:qty,price:mf,amount:mf*qty,remark:'手填项目材料',kind:'material',manual:true,bulk:isBulk}); out.material+=mf*qty;}
+    out.valid=true;
+    return out;
+  }
+  var sel=line.querySelector('.pl-select');
+  var p=prices.find(function(x){return x.id==sel.value});
+  if(!p) return out;
+  var pr=priceFor(p);
+  var effRepair=(bulkMode==='manual'&&bulkUnit>0)?bulkUnit:pr.repair;
+  var rem2=(p.spec||'')+(isBulk?(' · '+bulkTag):'')+(bulkMode==='manual'?(' · 手动改价：'+bulkReason):'');
+  out.lines.push({projectName:p.name,unit:p.unit,qty:qty,price:effRepair,amount:effRepair*qty,remark:rem2,kind:'repair',bulk:isBulk});
+  out.repair+=effRepair*qty;
+  if(!p.jia&&pr.matFee){out.lines.push({projectName:(p.matName||p.name)+'材料',unit:'个',qty:qty,price:pr.matFee,amount:pr.matFee*qty,remark:p.spec||'',kind:'material',bulk:isBulk}); out.material+=pr.matFee*qty;}
+  out.valid=true;
+  return out;
+}
 function computeTotals(){
-  var door=0,repair=0,material=0;
+  var door=0,repair=0,material=0,custom=0;
   if(currentStore) door=doorChargedZero?0:feeForRegion(currentStore.region);
-  var p=getProject(), qty=Math.max(1, Number($('f_qty').value)||1);
-  if(p){repair+=p.repair*qty; if(!p.jia) material+= (p.matFee||0)*qty;}
+  document.querySelectorAll('#projLines .proj-line').forEach(function(line){
+    var a=lineAmounts(line);
+    repair+=a.repair; material+=a.material; custom+=a.custom;
+  });
   document.querySelectorAll('#extraLines .line-row').forEach(function(row){
     var q=Number(row.querySelector('.ex-qty').value)||0, pr=Number(row.querySelector('.ex-price').value)||0, k=row.querySelector('.ex-kind').value;
-    if(k==='repair') repair+=q*pr; else material+=q*pr;
+    if(k==='repair') custom+=q*pr; else material+=q*pr;
   });
-  return {door:door,repair:repair,material:material,total:door+repair+material};
+  return {door:door,repair:repair,material:material,custom:custom,total:door+repair+material+custom};
 }
 function recalc(){
   if(currentStore) checkDoorVisualOnly();
   var t=computeTotals();
   $('t_door').textContent=money(t.door); $('t_repair').textContent=money(t.repair); $('t_material').textContent=money(t.material);
+  var tc=$('t_custom'); if(tc) tc.textContent=money(t.custom);
   $('t_total').textContent=money(t.total); $('t_upper').textContent=t.total?('大写：'+toUpper(t.total)):'';
 }
 function checkDoorVisualOnly(){ /* keep fee text in sync without loop */ if(currentStore){ $('f_regionFeeText').textContent=currentStore.region+' · 上门费 '+(doorChargedZero?0:feeForRegion(currentStore.region))+' 元'+(doorChargedZero?'（今日已收过）':''); } }
@@ -734,20 +962,41 @@ function submitOrder(){
   var code=$('f_storeCode').value.trim();
   if(!code){$('storeError').textContent='门店编号必填，不填交不上去。输 10001–10005 试试。';$('storeError').style.display='block';$('f_storeCode').focus();window.scrollTo({top:0,behavior:'smooth'});return}
   lookupStore(); if(!currentStore) return;
-  var p=getProject(); if(!p){showToast('请先选一个维修项目，或去价格维护新增。');return}
-  var qty=Math.max(1,Number($('f_qty').value)||1), t=computeTotals(), lines=[];
+  var t=computeTotals(), lines=[];
   lines.push({projectName:'上门费（'+currentStore.region+'）',unit:'次',qty:1,price:t.door,amount:t.door,remark:doorChargedZero?'同日同店已收过，本单不重复收':'',kind:'door'});
-  lines.push({projectName:p.name,unit:p.unit,qty:qty,price:p.repair,amount:p.repair*qty,remark:p.spec||'',kind:'repair'});
-  if(!p.jia && p.matFee){ lines.push({projectName:(p.matName||p.name)+'材料',unit:'个',qty:qty,price:p.matFee,amount:p.matFee*qty,remark:p.spec||'',kind:'material'}); }
+  var anyValid=false, bulkNoReason=false, manualNoName=false;
+  document.querySelectorAll('#projLines .proj-line').forEach(function(line){
+    var a=lineAmounts(line);
+    if(a.valid){anyValid=true; lines=lines.concat(a.lines);}
+    var manual=line.querySelector('.pl-manual');
+    var isManual=!manual.classList.contains('hidden');
+    if(isManual&&!line.querySelector('.pl-m-name').value.trim()){
+      var rp=Number(line.querySelector('.pl-m-repair').value)||0;
+      var mn=line.querySelector('.pl-m-matname').value.trim();
+      if(rp>0||mn) manualNoName=true;
+    }
+    var bulkBox=line.querySelector('.pl-bulk');
+    if(bulkBox&&!bulkBox.classList.contains('hidden')){
+      var r=line.querySelector('input[name="bulk-'+line.id+'"]:checked');
+      if(r&&r.value==='manual'){
+        var bu=line.querySelector('.pl-bulk-unit'), br=line.querySelector('.pl-bulk-reason');
+        if(!(bu&&Number(bu.value)>0)||!(br&&br.value.trim())) bulkNoReason=true;
+      }
+    }
+  });
+  if(manualNoName){showToast('有一行手动填写没填项目名称，填好再交。');return}
+  if(!anyValid){showToast('请至少选一个维修项目，或手动填一个。');return}
+  if(bulkNoReason){showToast('大数量手动改价要填改后单价和原因。');return}
   document.querySelectorAll('#extraLines .line-row').forEach(function(row){
     var nm=row.querySelector('.ex-name').value.trim(); if(!nm) return;
     var q=Number(row.querySelector('.ex-qty').value)||0, pr=Number(row.querySelector('.ex-price').value)||0, k=row.querySelector('.ex-kind').value, spec=row.querySelector('.ex-spec').value.trim();
     lines.push({projectName:nm,unit:spec||'次',qty:q,price:pr,amount:q*pr,remark:k==='repair'?'非标项目':'',kind:k==='repair'?'custom':'material'});
   });
-  var order={id:'T'+Date.now(),storeCode:currentStore.code,storeName:currentStore.name,region:currentStore.region,date:$('f_date').value,worker:currentUser.name,workerAccount:currentUser.account,status:'待工程管理员确认',photo:$('photoPreview').src||'',remark:$('f_remark').value.trim(),lines:lines,total:t.total};
+  var order={id:'T'+Date.now(),storeCode:currentStore.code,storeName:currentStore.name,region:currentStore.region,priceVersion:(currentVersion||priceVersions[0]).name,hasBulk:lines.some(function(l){return l.bulk}),date:$('f_date').value,worker:currentUser.name,workerAccount:currentUser.account,status:'待工程管理员确认',photo:$('photoPreview').src||'',remark:$('f_remark').value.trim(),lines:lines,total:t.total};
   orders.unshift(order);
-  $('submitOk').textContent='✅ 已提交：'+order.storeName+'，合计 '+money(order.total)+'（'+toUpper(order.total)+'），状态：待工程管理员确认。在“单据”里能核对。';
   renderOrders(); renderSummary();
+  resetFillForm();
+  $('submitOk').textContent='✅ 已提交：'+order.storeName+'，合计 '+money(order.total)+'（'+toUpper(order.total)+'），价格版本：'+order.priceVersion+'，状态：待工程管理员确认。在“单据”里能核对。';
 }
 function visibleOrders(){
   var list=orders.slice();
@@ -756,8 +1005,15 @@ function visibleOrders(){
 }
 function filteredOrders(){
   var m=$('q_month').value, r=$('q_region').value, s=$('q_status').value, sc=($('q_store').value||'').trim(), pj=($('q_proj').value||'').trim(), w=($('q_worker').value||'').trim();
+  var from=$('q_from').value, to=$('q_to').value;
+  var minAmt=$('q_minAmt').value===''?'':Number($('q_minAmt').value);
+  var maxAmt=$('q_maxAmt').value===''?'':Number($('q_maxAmt').value);
   return visibleOrders().filter(function(o){
     if(m && o.date.indexOf(m)!==0) return false;
+    if(from && o.date<from) return false;
+    if(to && o.date>to) return false;
+    if(minAmt!=='' && o.total<minAmt) return false;
+    if(maxAmt!=='' && o.total>maxAmt) return false;
     if(r && o.region!==r) return false;
     if(s && o.status!==s) return false;
     if(sc && o.storeCode.indexOf(sc)<0) return false;
@@ -766,18 +1022,51 @@ function filteredOrders(){
     return true;
   });
 }
-function statusClass(s){return s==='待工程管理员确认'?'st-pending':(s==='已确认'?'st-confirmed':'st-settled')}
+function statusClass(s){return s==='待工程管理员确认'?'st-pending':(s==='已确认'?'st-confirmed':(s==='已回退'?'st-rejected':(s==='已撤销'?'st-cancelled':'st-settled')))}
 function renderOrders(){
   var list=filteredOrders();
   if(!list.length){$('ordersList').innerHTML='<div class="card">没有符合条件的单据。</div>';return}
   $('ordersList').innerHTML=list.map(function(o){
-    var rows=o.lines.map(function(l){return '<tr><td>'+esc(l.projectName)+'</td><td>'+esc(l.unit)+'</td><td>'+esc(l.qty)+'</td><td>'+money(l.price)+'</td><td>'+money(l.amount)+'</td></tr>'}).join('');
-    var adminBtns=currentUser.role==='admin'?'<button class="btn-sm" onclick="openEdit(\''+o.id+'\')">修改内容</button> '+(o.status==='待工程管理员确认'?'<button class="btn-sm primary" onclick="setStatus(\''+o.id+'\',\'已确认\')">确认</button> ':'')+(o.status==='已确认'?'<button class="btn-sm" onclick="setStatus(\''+o.id+'\',\'已结算\')">标为已结算</button> ':'')+'<button class="btn-sm" onclick="delOrder(\''+o.id+'\')">删除</button>':'';
-    return '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><strong>'+esc(o.storeName)+'</strong> <span class="pill">'+esc(o.storeCode)+'</span> <span class="pill">'+esc(o.region)+'</span><div class="hint">'+esc(o.date)+' · '+esc(o.worker)+' · 单号 '+esc(o.id)+'</div></div><div style="text-align:right"><span class="status '+statusClass(o.status)+'">'+esc(o.status)+'</span><div style="font-weight:800;margin-top:6px">'+money(o.total)+'</div></div></div><div class="table-wrap" style="margin-top:10px"><table style="min-width:420px"><thead><tr><th>项目</th><th>单位</th><th>数量</th><th>单价</th><th>合计</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+(o.remark?'<p class="hint">备注：'+esc(o.remark)+'</p>':'')+'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+adminBtns+'</div></div>';
+    var rows=o.lines.map(function(l){
+      var flags='';
+      if(l.manual) flags+='<span class="flag">手填</span>';
+      if(l.bulk) flags+='<span class="flag flag-red">大数量</span>';
+      return '<tr><td>'+esc(l.projectName)+flags+'</td><td>'+esc(l.unit)+'</td><td>'+esc(l.qty)+'</td><td>'+money(l.price)+'</td><td>'+money(l.amount)+'</td></tr>'}).join('');
+    var isAdmin=currentUser.role==='admin';
+    var btns='';
+    if(isAdmin){
+      btns='<button class="btn-sm" onclick="openEdit(\''+o.id+'\')">修改内容</button> '
+        +(o.status==='待工程管理员确认'?'<button class="btn-sm primary" onclick="setStatus(\''+o.id+'\',\'已确认\')">确认</button> ':'')
+        +(o.status==='已确认'?'<button class="btn-sm" onclick="setStatus(\''+o.id+'\',\'已结算\')">标为已结算</button> ':'')
+        +((o.status==='待工程管理员确认'||o.status==='已确认')?'<button class="btn-sm" onclick="openReject(\''+o.id+'\')">回退</button> ':'')
+        +'<button class="btn-sm" onclick="delOrder(\''+o.id+'\')">删除</button>';
+    }else{
+      if(o.status==='待工程管理员确认') btns='<button class="btn-sm" onclick="withdrawOrder(\''+o.id+'\')">撤销</button>';
+      if(o.status==='已回退'||o.status==='已撤销') btns='<button class="btn-sm primary" onclick="openEdit(\''+o.id+'\',true)">修改并重新提交</button>';
+    }
+    var ver=o.priceVersion?'<span class="pill">价格版本：'+esc(o.priceVersion)+'</span>':'';
+    var bulkFlag=o.hasBulk?'<span class="flag flag-red">含大数量</span>':'';
+    var rej=(o.status==='已回退'&&o.rejectReason)?'<div class="notice" style="margin-top:10px">↩️ 已回退，原因：'+esc(o.rejectReason)+'</div>':'';
+    return '<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><strong>'+esc(o.storeName)+'</strong> <span class="pill">'+esc(o.storeCode)+'</span> <span class="pill">'+esc(o.region)+'</span> '+ver+' '+bulkFlag+'<div class="hint">'+esc(o.date)+' · '+esc(o.worker)+' · 单号 '+esc(o.id)+'</div></div><div style="text-align:right"><span class="status '+statusClass(o.status)+'">'+esc(o.status)+'</span><div style="font-weight:800;margin-top:6px">'+money(o.total)+'</div></div></div><div class="table-wrap" style="margin-top:10px"><table style="min-width:420px"><thead><tr><th>项目</th><th>单位</th><th>数量</th><th>单价</th><th>合计</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rej+(o.remark?'<p class="hint">备注：'+esc(o.remark)+'</p>':'')+'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+btns+'</div></div>';
   }).join('');
 }
 function setStatus(id,st){var o=orders.find(function(x){return x.id===id}); if(o){o.status=st; renderOrders(); renderSummary();}}
 var pendingDelete=null; function delOrder(id){ if(pendingDelete!==id){pendingDelete=id; showToast('再点一次删除按钮确认删除。'); return;} pendingDelete=null; orders=orders.filter(function(x){return x.id!==id}); renderOrders(); renderSummary(); showToast('已删除。'); }
+var pendingWithdraw=null;
+function withdrawOrder(id){
+  if(pendingWithdraw!==id){pendingWithdraw=id; showToast('再点一次撤销按钮确认收回这单。'); return;}
+  pendingWithdraw=null;
+  var o=orders.find(function(x){return x.id===id});
+  if(o&&o.status==='待工程管理员确认'){o.status='已撤销'; renderOrders(); renderSummary(); showToast('已撤销，可修改后重新提交。');}
+}
+function openReject(id){$('r_id').value=id;$('r_reason').value='';$('rejectModal').classList.add('open')}
+function closeReject(){$('rejectModal').classList.remove('open')}
+function confirmReject(){
+  var id=$('r_id').value, reason=$('r_reason').value.trim();
+  if(!reason){showToast('请写回退原因，维修人员要按原因改。');return}
+  var o=orders.find(function(x){return x.id===id});
+  if(o){o.status='已回退'; o.rejectReason=reason; closeReject(); renderOrders(); renderSummary(); showToast('已回退给维修人员。');}
+}
 function addEditLine(l){
   l=l||{projectName:'',unit:'次',qty:1,price:0,remark:'',kind:'repair'};
   var div=document.createElement('div'); div.className='edit-line';
@@ -804,9 +1093,21 @@ function recalcEdit(){
   var t=$('e_total'); if(t) t.textContent=money(total);
   return total;
 }
-function openEdit(id){
+var editAsWorker=false;
+function openEdit(id,asWorker){
   var o=orders.find(function(x){return x.id===id}); if(!o) return;
+  editAsWorker=!!asWorker;
+  if(editAsWorker){
+    if(o.workerAccount!==currentUser.account){showToast('只能改自己的单。');return}
+    if(o.status!=='已回退'&&o.status!=='已撤销'){showToast('这单现在不能改。');return}
+  }
   $('e_id').value=o.id; $('e_storeCode').value=o.storeCode; $('e_storeName').value=o.storeName; $('e_region').value=o.region; $('e_date').value=o.date; $('e_worker').value=o.worker; $('e_status').value=o.status; $('e_remark').value=o.remark||'';
+  $('e_statusField').style.display=editAsWorker?'none':'';
+  $('editTitle').textContent=editAsWorker?'修改单据并重新提交':'工程管理员 · 修改单据（按行改）';
+  $('editSaveBtn').textContent=editAsWorker?'保存并重新提交':'保存修改';
+  var note=$('editRejectNote');
+  if(editAsWorker&&o.status==='已回退'&&o.rejectReason){note.classList.remove('hidden');note.innerHTML='<strong>回退原因：</strong>'+esc(o.rejectReason);}
+  else note.classList.add('hidden');
   $('e_lineRows').innerHTML='';
   o.lines.forEach(function(l){addEditLine(l)});
   if(!o.lines.length) addEditLine();
@@ -816,18 +1117,20 @@ function openEdit(id){
 function closeEdit(){$('editModal').classList.remove('open')}
 function saveEdit(){
   var o=orders.find(function(x){return x.id===$('e_id').value}); if(!o) return;
-  o.storeCode=$('e_storeCode').value.trim(); o.storeName=$('e_storeName').value.trim(); o.region=$('e_region').value.trim(); o.date=$('e_date').value; o.worker=$('e_worker').value.trim(); o.status=$('e_status').value; o.remark=$('e_remark').value.trim();
+  o.storeCode=$('e_storeCode').value.trim(); o.storeName=$('e_storeName').value.trim(); o.region=$('e_region').value.trim(); o.date=$('e_date').value; o.worker=$('e_worker').value.trim(); o.status=editAsWorker?'待工程管理员确认':$('e_status').value; o.remark=$('e_remark').value.trim();
+  if(editAsWorker) o.rejectReason='';
   var lines=[];
   document.querySelectorAll('#e_lineRows .edit-line').forEach(function(row){
     var nm=row.querySelector('.el-name').value.trim(); if(!nm) return;
     var q=Number(row.querySelector('.el-qty').value)||0, pr=Number(row.querySelector('.el-price').value)||0;
-    lines.push({projectName:nm,unit:row.querySelector('.el-unit').value.trim()||'次',qty:q,price:pr,amount:q*pr,remark:row.querySelector('.el-remark').value.trim(),kind:row.querySelector('.el-kind').value});
+    lines.push({projectName:nm,unit:row.querySelector('.el-unit').value.trim()||'次',qty:q,price:pr,amount:q*pr,remark:row.querySelector('.el-remark').value.trim(),kind:row.querySelector('.el-kind').value,bulk:q>=settings.bulkQty});
   });
   if(!lines.length){showToast('明细至少要留一行有项目名称的。');return}
   o.lines=lines;
   o.total=lines.reduce(function(a,l){return a+l.amount},0);
+  o.hasBulk=lines.some(function(l){return l.bulk});
   closeEdit(); renderOrders(); renderSummary();
-  showToast('已保存修改，合计 '+money(o.total)+'。');
+  showToast(editAsWorker?('已重新提交，合计 '+money(o.total)+'，状态：待工程管理员确认。'):('已保存修改，合计 '+money(o.total)+'。'));
 }
 function kindLabel(kind){
   if(kind==='door') return '上门费';
@@ -1222,24 +1525,98 @@ function renderPrices(){
 }
 function resetPriceForm(){$('p_editId').value='';['p_name','p_cat','p_spec','p_repair','p_matName','p_matFee'].forEach(function(id){$(id).value=''});$('p_unit').value='次';$('p_jia').checked=false;$('p_saveBtn').textContent='新增项目'}
 function editPrice(id){var p=prices.find(function(x){return x.id===id}); if(!p) return; $('p_editId').value=p.id;$('p_name').value=p.name;$('p_cat').value=p.cat;$('p_unit').value=p.unit;$('p_spec').value=p.spec;$('p_repair').value=p.repair;$('p_matName').value=p.matName;$('p_matFee').value=p.matFee;$('p_jia').checked=p.jia;$('p_saveBtn').textContent='保存修改'; window.scrollTo({top:0,behavior:'smooth'});}
-function delPrice(id){prices=prices.filter(function(x){return x.id!==id}); renderPrices(); renderProjectOptions();}
+function delPrice(id){prices=prices.filter(function(x){return x.id!==id}); renderPrices(); refreshAllProjLines();}
 function savePriceItem(){
   var data={name:$('p_name').value.trim(),cat:$('p_cat').value.trim()||'未分类',unit:$('p_unit').value.trim()||'次',spec:$('p_spec').value.trim(),repair:Number($('p_repair').value)||0,matName:$('p_matName').value.trim(),matFee:Number($('p_matFee').value)||0,jia:$('p_jia').checked};
   if(!data.name){showToast('项目名称必填');return}
   var eid=$('p_editId').value;
   if(eid){var p=prices.find(function(x){return x.id==eid}); Object.assign(p,data);}
   else{data.id=nextPriceId++; prices.push(data);}
-  resetPriceForm(); renderPrices(); renderProjectOptions();
+  resetPriceForm(); renderPrices(); refreshAllProjLines();
 }
 function renderStores(){
-  $('storeList').innerHTML=stores.map(function(s){return '<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><span><strong>'+esc(s.code)+'</strong> · '+esc(s.name)+' · '+esc(s.region)+'（上门费 '+feeForRegion(s.region)+' 元）</span><button class="btn-sm" onclick="useStore(\''+esc(s.code)+'\')">去填单试试</button></div>'}).join('');
+  $('storeList').innerHTML=stores.map(function(s){
+    var v=versionForStore(s);
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><span><strong>'+esc(s.code)+'</strong> · '+esc(s.name)+' · '+esc(s.region)+'（上门费 '+feeForRegion(s.region)+' 元） · 价格版本：'+esc(v.name)+'</span><button class="btn-sm" onclick="copyStoreCode(\''+esc(s.code)+'\')">复制店号</button></div>'}).join('');
 }
-function useStore(code){showTab('fill');$('f_storeCode').value=code;lookupStore();}
-function addStore(){var c=$('s_code').value.trim(), n=$('s_name').value.trim(), r=$('s_region').value.trim(); if(!c||!n||!r){showToast('店号、店名、区域都要填');return} var ex=stores.find(function(s){return s.code===c}); if(ex){ex.name=n;ex.region=r}else stores.push({code:c,name:n,region:r}); renderStores();}
+function copyStoreCode(code){
+  function done(){showToast('店号 '+code+' 已复制，发给维修人员填单用。')}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(done).catch(function(){showToast('店号：'+code+'，请手动复制发给维修人员。')});}
+  else showToast('店号：'+code+'，请手动复制发给维修人员。');
+}
+function addStore(){var c=$('s_code').value.trim(), n=$('s_name').value.trim(), r=$('s_region').value.trim(); var ver=$('s_version')?$('s_version').value:'taizhou'; if(!c||!n||!r){showToast('店号、店名、区域都要填');return} var ex=stores.find(function(s){return s.code===c}); if(ex){ex.name=n;ex.region=r;ex.version=ver}else stores.push({code:c,name:n,region:r,version:ver}); renderStores();}
 function bulkSync(){
   var lines=$('bulkStores').value.split('\n').filter(function(s){return s.trim()}); var added=0, updated=0;
-  lines.forEach(function(s){var p=s.split(/[,，\t]/).map(function(x){return x.trim()}); if(p.length<3) return; var ex=stores.find(function(x){return x.code===p[0]}); if(ex){ex.name=p[1];ex.region=p[2];updated++} else {stores.push({code:p[0],name:p[1],region:p[2]});added++}});
+  lines.forEach(function(s){var p=s.split(/[,，\t]/).map(function(x){return x.trim()}); if(p.length<3) return; var verId=null; if(p[3]){var vv=priceVersions.find(function(x){return x.name===p[3]}); if(vv) verId=vv.id;} var ex=stores.find(function(x){return x.code===p[0]}); if(ex){ex.name=p[1];ex.region=p[2];if(verId)ex.version=verId;updated++} else {var ns={code:p[0],name:p[1],region:p[2]}; if(verId)ns.version=verId; stores.push(ns);added++}});
   $('bulkMsg').textContent='同步完成：新增 '+added+' 家，更新 '+updated+' 家。'; renderStores();
+}
+function renderVersions(){
+  var el=$('versionList'); if(!el) return;
+  el.innerHTML=priceVersions.map(function(v){
+    var n=Object.keys(v.overrides||{}).length;
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);flex-wrap:wrap"><span><strong>'+esc(v.name)+'</strong> <span class="pill">'+esc(v.regions.join('、')||'未绑定地区')+'</span> <span class="hint">改了 '+n+' 项单价</span></span><span style="display:flex;gap:8px">'+(v.id==='taizhou'?'<span class="hint">基准价在下面“维修项目”里改</span>':'<button class="btn-sm" onclick="renderVersionEditor(\''+v.id+'\')">改单价</button><button class="btn-sm" onclick="delVersion(\''+v.id+'\')">删版本</button>')+'</span></div>';
+  }).join('');
+}
+function addVersion(){
+  var name=$('newVerName').value.trim();
+  if(!name){showToast('先填版本名，例如 杭州。');return}
+  var id='v'+Date.now();
+  priceVersions.push({id:id,name:name,regions:[],overrides:{}});
+  $('newVerName').value='';
+  renderVersions(); fillStoreVersionSelect();
+  renderVersionEditor(id);
+  showToast('已新增版本“'+name+'”，先在下面改单价，再去门店维护把门店绑到这个版本。');
+}
+function delVersion(id){
+  if(id==='taizhou') return;
+  priceVersions=priceVersions.filter(function(v){return v.id!==id});
+  stores.forEach(function(s){if(s.version===id) delete s.version});
+  renderVersions(); renderStores(); fillStoreVersionSelect();
+  $('versionEditor').innerHTML='';
+}
+function renderVersionEditor(verId){
+  var v=priceVersions.find(function(x){return x.id===verId}); if(!v) return;
+  var ed=$('versionEditor');
+  ed.innerHTML='<h4 style="margin:0 0 8px">改单价 · '+esc(v.name)+'版本</h4>'
+    +'<p class="hint">只填和台州不一样的单价，留空 = 和台州价一样。改完立刻生效（填单时按门店版本取价）。</p>'
+    +'<div class="field"><label>搜项目</label><input id="verSearch" placeholder="搜项目名" oninput="renderVersionRows(\''+v.id+'\')"></div>'
+    +'<div id="verRows" style="margin-top:10px"></div>'
+    +'<div class="field" style="margin-top:10px"><label>绑定地区（逗号隔开，门店没单独指定版本时按地区找版本）</label><input id="verRegions" value="'+esc(v.regions.join('，'))+'" onchange="saveVerRegions(\''+v.id+'\',this.value)"></div>';
+  renderVersionRows(v.id);
+}
+function renderVersionRows(verId){
+  var v=priceVersions.find(function(x){return x.id===verId}); if(!v) return;
+  var q=(($('verSearch')&&$('verSearch').value)||'').trim().toLowerCase();
+  var list=prices.filter(function(p){
+    if(!q) return true;
+    return (p.name+' '+p.cat).toLowerCase().indexOf(q)>=0;
+  }).slice(0,60);
+  $('verRows').innerHTML=list.map(function(p){
+    var o=(v.overrides&&v.overrides[p.id])||{};
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><strong style="min-width:160px;flex:1">'+esc(p.name)+'</strong><span class="hint">台州：维修 '+p.repair+' / 材料 '+p.matFee+'</span><label class="hint">维修 <input type="number" value="'+(o.repair!=null?o.repair:'')+'" placeholder="同台州" style="width:100px" onchange="setVerPrice(\''+v.id+'\','+p.id+',\'repair\',this.value)"></label><label class="hint">材料 <input type="number" value="'+(o.matFee!=null?o.matFee:'')+'" placeholder="同台州" style="width:100px" onchange="setVerPrice(\''+v.id+'\','+p.id+',\'matFee\',this.value)"></label></div>';
+  }).join('')+(list.length>=60?'<p class="hint">只显示前 60 个，搜一下再改。</p>':'');
+}
+function setVerPrice(verId,priceId,field,val){
+  var v=priceVersions.find(function(x){return x.id===verId}); if(!v) return;
+  v.overrides=v.overrides||{};
+  var o=v.overrides[priceId]||{};
+  if(val===''||val==null) delete o[field]; else o[field]=Number(val);
+  if(o.repair==null&&o.matFee==null) delete v.overrides[priceId]; else v.overrides[priceId]=o;
+  renderVersions();
+}
+function saveVerRegions(verId,val){
+  var v=priceVersions.find(function(x){return x.id===verId}); if(!v) return;
+  v.regions=val.split(/[,，]/).map(function(s){return s.trim()}).filter(Boolean);
+  renderVersions();
+}
+function fillStoreVersionSelect(){
+  var sel=$('s_version'); if(!sel) return;
+  sel.innerHTML=priceVersions.map(function(v){return '<option value="'+v.id+'">'+esc(v.name)+'</option>'}).join('');
+}
+function setBulkQty(){
+  var n=Math.max(2,Number($('bulkQtyInput').value)||5);
+  settings.bulkQty=n; $('bulkQtyInput').value=n;
+  showToast('大数量提醒线已设为 '+n+' 个。');
 }
 document.addEventListener('DOMContentLoaded',function(){ var d=$('f_date'); if(d) d.addEventListener('change',function(){doorChargedZero=false; if(currentStore) lookupStore();}); });
 </script>
